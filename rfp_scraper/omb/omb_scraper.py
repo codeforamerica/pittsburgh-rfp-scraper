@@ -22,21 +22,25 @@ class OmbScraper(RfpScraper):
             if elem.name == 'a':
                 output['name'] = elem.text
                 output['resource'] = elem.attrs.get('href')
-            elif elem.name == 'li':
-                output = self.process_ul_children(elem)
-            elif elem.name == 'ul':
-                if 'additional_information' not in output.keys():
-                    output['additional_information'] = []
-                output['additional_information'].append(self.process_ul_children(elem))
+            elif elem.name in ['div', 'p']:
+                if elem.children:
+                    output = self.process_ul_children(elem)
+                else:
+                    output['text_description'] = elem.text.replace('\r', '').replace('\n', '')
+            elif elem.name in ['ul', 'li']:
+                try:
+                    output['additional_information'].append(self.process_ul_children(elem))
+                except:
+                    output['additional_information'] = [self.process_ul_children(elem)]
             elif isinstance(elem, NavigableString):
                 if elem not in ['\n', '<br>']:
                     output['text_description'] = elem.replace('\r', '').replace('\n', '')
 
         return output
 
-
     def scrape(self):
         output_bids = []
+        current_header, page_contents = None, None
 
         soup = BeautifulSoup(requests.get(self.base_url).text)
 
@@ -47,7 +51,6 @@ class OmbScraper(RfpScraper):
         current_elem = bids_div.h4
 
         while current_elem.next_sibling:
-            current_header, page_contents = None, None
 
             current_elem = current_elem.next_sibling
 
@@ -62,9 +65,10 @@ class OmbScraper(RfpScraper):
                 page_contents = self.process_ul_children(current_elem)
 
             if current_header and page_contents:
-                output.append({
+                output_bids.append({
                     current_header: page_contents
                 })
 
-        return output
+                current_header, page_contents = None, None
 
+        return output_bids
