@@ -9,32 +9,41 @@ class OmbScraper(RfpScraper):
     def __init__(self, base_url=None):
         self.base_url = 'http://pittsburghpa.gov/omb/contract-bids' if not base_url else base_url
 
-    def process_ul_children(self, bs_elem):
+    def process_bid_text(self, elem):
+
+        bid = {}
+
+        if isinstance(elem, NavigableString):
+            if elem != '\n':
+                bid['text_description'] = elem.replace('\r', '').replace('\n', '').replace(u'\xa0', '')
+        elif elem.name == 'a':
+            bid['name'] = elem.text
+            bid['resource'] = elem.attrs.get('href')
+        elif elem.name in ['div', 'p', 'span']:
+            if elem.a:
+                bid['additional_information'] = self.process_bid_text(elem.a)
+            else:
+                bid['text_description'] = elem.text.replace('\r', '').replace('\n', '').replace(u'\xa0', '')
+
+        return bid
+
+    def process_ul_children(self, ul):
         '''
         Takes in a beautiful soup elem and recursively
         processes its children. Takes in a parent element
         as an argument and returns a dictionary of text
         and links
         '''
-        output = {}
+        output = []
 
-        for elem in bs_elem.children:
-            if elem.name == 'a':
-                output['name'] = elem.text
-                output['resource'] = elem.attrs.get('href')
-            elif elem.name in ['div', 'p']:
-                if elem.children:
-                    output = self.process_ul_children(elem)
+        for li in ul.find_all('li', recursive=False):
+            for child in li.contents:
+                if child.name == 'ul':
+                    output.append(self.process_ul_children(child))
                 else:
-                    output['text_description'] = elem.text.replace('\r', '').replace('\n', '')
-            elif elem.name in ['ul', 'li']:
-                try:
-                    output['additional_information'].append(self.process_ul_children(elem))
-                except:
-                    output['additional_information'] = [self.process_ul_children(elem)]
-            elif isinstance(elem, NavigableString):
-                if elem not in ['\n', '<br>']:
-                    output['text_description'] = elem.replace('\r', '').replace('\n', '')
+                    bid_text = process_bid_text(child)
+                    if len(bid_text.keys()) > 0:
+                        output.append(bid_text)
 
         return output
 
@@ -51,12 +60,11 @@ class OmbScraper(RfpScraper):
         current_elem = bids_div.h4
 
         while current_elem.next_sibling:
-
             current_elem = current_elem.next_sibling
 
             # all the actual bids are stored in ul tags
             if current_elem.name == 'h4':
-                current_header = current_elem.text
+                current_header = current_elem.text.replace(u'\xa0', '')
 
             elif current_elem.name != 'ul':
                 continue
@@ -66,7 +74,8 @@ class OmbScraper(RfpScraper):
 
             if current_header and page_contents:
                 output_bids.append({
-                    current_header: page_contents
+                    'bid_type': current_header,
+                    'open_bids': page_contents
                 })
 
                 current_header, page_contents = None, None
