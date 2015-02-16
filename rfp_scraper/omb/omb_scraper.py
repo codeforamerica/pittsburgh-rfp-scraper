@@ -8,8 +8,12 @@ from rfp_scraper.scraper import RfpScraper
 class OmbScraper(RfpScraper):
     def __init__(self, base_url=None):
         self.base_url = 'http://pittsburghpa.gov/omb/contract-bids' if not base_url else base_url
+        self.scraped = False
 
     def process_bid_text(self, elem):
+        '''
+        Extracts names, resources, and other text from elements
+        '''
 
         bid = {}
 
@@ -78,6 +82,67 @@ class OmbScraper(RfpScraper):
                     'open_bids': page_contents
                 })
 
-                current_header, page_contents = None, None
+                page_contents = None
 
+        self.scraped = True
         return output_bids
+
+
+    def rfp_parser(self, bids):
+        metadata, information = [], []
+        for bid in bids.get('open_bids'):
+            if isinstance(bid, dict):
+                metadata.append(bid.get('additional_information', bid))
+            elif isinstance(bid, list):
+                information.append([
+                    i.get('additional_information', i) for i in bid
+                ])
+        zipped = zip(metadata, information)
+        for i in zipped:
+            i[0]['additional_information'] = i[1]
+        return [i[0] for i in zipped]
+
+    def construction_ela_parser(self, bids):
+        metadata, information = [], []
+        for bid in bids.get('open_bids'):
+            if sorted(bid.keys()) == ['name', 'resource']:
+                metadata.append(bid)
+            else:
+                information.append(bid)
+        zipped = zip(metadata, information)
+        for i in zipped:
+            i[0]['additional_information'] = i[1]
+        return [i[0] for i in zipped]    
+
+    def rfq_and_letter_parser(self, bids):
+        metadata, information = [], []
+        for bid in bids.get('open_bids'):
+            if isinstance(bid, dict):
+                metadata.append(bid)
+            elif isinstance(bid, list):
+                information.append(bid)
+        zipped = zip(metadata, information)
+        for i in zipped:
+            i[0]['additional_information'] = i[1]
+        return [i[0] for i in zipped]
+
+    def format_bids(self, bids):
+        if not self.scraped:
+            raise Exception('This data is stale and will format incorrectly. Please re-scrape.')
+
+        formatted = []
+        for bid in bids:
+            if bid.get('bid_type') == 'REQUESTS FOR PROPOSALS:':
+                test_bid = self.rfp_parser(bid)
+            elif bid.get('bid_type') in ['CONSTRUCTION PROJECTS:', 'EQUIPMENT LEASING AUTHORITY BIDS:'] :
+                test_bid = self.construction_ela_parser(bid)
+            elif bid.get('bid_type') == 'REQUESTS FOR QUOTE & LETTER OF INTENT:':
+                test_bid = self.rfq_and_letter_parser(bid)
+            else:
+                test_bid = bid.get('open_bids')
+            formatted.append({
+                'bid_type': bid.get('bid_type'),
+                'open_bids': test_bid
+            })
+        self.scraped = False
+        return formatted
