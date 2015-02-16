@@ -25,7 +25,7 @@ class RfpScraper(object):
         '''
         raise NotImplementedError
 
-    def format(self):
+    def format_bids(self):
         '''
         Formats data to return in a standard format
 
